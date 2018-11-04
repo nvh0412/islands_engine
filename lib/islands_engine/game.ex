@@ -12,16 +12,19 @@ defmodule IslandsEngine.Game do
   end
 
   def start_link(name) when is_binary(name), do:
-    GenServer.start_link(__MODULE__, name, [])
+  GenServer.start_link(__MODULE__, name, [])
 
   def add_player(game, name) when is_binary(name), do:
-    GenServer.call(game, { :add_player, name })
+  GenServer.call(game, { :add_player, name })
 
   def position_islands(game, player, key, row, col) when player in @players, do:
-    GenServer.call(game, { :position_islands, player, key, row, col })
+  GenServer.call(game, { :position_islands, player, key, row, col })
 
   def set_islands(game, player) when player in @players, do:
-    GenServer.call(game, { :set_islands, player })
+  GenServer.call(game, { :set_islands, player })
+
+  def guess_coordinate(game, player, row, col), do:
+  GenServer.call(game, { :guess_coordinate, player, row, col})
 
   def handle_call({:add_player, name}, _from, state_data) do
     with {:ok, rules} <- Rules.check(state_data.rules, :add_player) do
@@ -65,6 +68,33 @@ defmodule IslandsEngine.Game do
       :error -> {:reply, :error, state_data}
       false -> {:reply, {:error, :not_all_island_positioned}, state_data}
     end
+  end
+
+  def handle_call({:guess_coordinate, player, row, col}, _from, state_data) do
+    opponent_key = opponent(player)
+    opponent_board = player_board(state_data, opponent_key)
+
+    with {:ok, rules} <- Rules.check(state_data.rules, {:guess_coordinate, player}),
+         {:ok, coordinate} <- Coordinate.new(row, col),
+         {hit_or_miss, forested_island, win_status, opponent_board} <- Board.guess(opponent_board, coordinate),
+         {:ok, rules} <- Rules.check(rules, {:win_check, win_status})
+    do
+      state_data
+      |> update_board(opponent_key, opponent_board)
+      |> update_guesses(player, hit_or_miss, coordinate)
+      |> update_rules(rules)
+      |> reply_success({hit_or_miss, forested_island, win_status})
+    else
+      :error -> {:reply, :error, state_data}
+      {:error, :invalid_coordiate} -> {:reply, {:error, :invalid_coordiate}, state_data}
+    end
+  end
+
+  defp opponent(:player1), do: :player2
+  defp opponent(:player2), do: :player1
+
+  defp update_guesses(state, player, hit_or_miss, coordinate) do
+    update_in(state[player].guesses, fn guesses -> Guesses.add(guesses, hit_or_miss, coordinate) end)
   end
 
   defp update_board(state, player, board) do
