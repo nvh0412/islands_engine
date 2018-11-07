@@ -1,6 +1,8 @@
 defmodule IslandsEngine.Game do
   alias IslandsEngine.{Board, Coordinate, Guesses, Island, Rules}
 
+  @timeout = 15000
+
   use GenServer, start: {__MODULE__, :start_link, []}, restart: :transient
 
   @players [:player1, :player2]
@@ -8,25 +10,30 @@ defmodule IslandsEngine.Game do
   def init(name) do
     player1 = %{name: name, board: Board.new(), guesses: Guesses.new()}
     player2 = %{name: nil, board: Board.new(), guesses: Guesses.new()}
-    { :ok, %{player1: player1, player2: player2, rules: %Rules{}} }
+    { :ok, %{player1: player1, player2: player2, rules: %Rules{}}, @timeout }
   end
 
   def via_tuple(name), do: {:via, Registry, {Registry.Game, name}}
 
-  def start_link(name) when is_binary(name), do:
-  GenServer.start_link(__MODULE__, name, [])
+  def start_link(name) when is_binary(name) do
+    GenServer.start_link(__MODULE__, name, name: via_tuple(name))
+  end
 
-  def add_player(game, name) when is_binary(name), do:
-  GenServer.call(game, { :add_player, name })
+  def add_player(game, name) when is_binary(name) do
+    GenServer.call(game, { :add_player, name })
+  end
 
-  def position_islands(game, player, key, row, col) when player in @players, do:
-  GenServer.call(game, { :position_islands, player, key, row, col })
+  def position_islands(game, player, key, row, col) when player in @players do
+    GenServer.call(game, { :position_islands, player, key, row, col })
+  end
 
-  def set_islands(game, player) when player in @players, do:
-  GenServer.call(game, { :set_islands, player })
+  def set_islands(game, player) when player in @players do
+    GenServer.call(game, { :set_islands, player })
+  end
 
-  def guess_coordinate(game, player, row, col), do:
-  GenServer.call(game, { :guess_coordinate, player, row, col})
+  def guess_coordinate(game, player, row, col) do
+    GenServer.call(game, { :guess_coordinate, player, row, col})
+  end
 
   def handle_call({:add_player, name}, _from, state_data) do
     with {:ok, rules} <- Rules.check(state_data.rules, :add_player) do
@@ -92,6 +99,10 @@ defmodule IslandsEngine.Game do
     end
   end
 
+  def handle_info(:timeout, state_data) do
+    { :stop, {:shutdown, :timeout}, state_data }
+  end
+
   defp opponent(:player1), do: :player2
   defp opponent(:player2), do: :player1
 
@@ -115,5 +126,5 @@ defmodule IslandsEngine.Game do
     %{ state | rules: rules }
   end
 
-  defp reply_success(state_data, reply), do: { :reply, reply, state_data }
+  defp reply_success(state_data, reply), do: { :reply, reply, state_data, @timeout }
 end
